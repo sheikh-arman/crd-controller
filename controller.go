@@ -19,6 +19,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/sheikh-arman/crd-controller/pkg/client/informers/externalversions/arman.com"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -49,18 +50,18 @@ import (
 const controllerAgentName = "my-custom-controller"
 
 const (
-	// SuccessSynced is used as part of the Event 'reason' when a messi is synced
+	// SuccessSynced is used as part of the Event 'reason' when a arman is synced
 	SuccessSynced = "Synced"
-	// ErrResourceExists is used as part of the Event 'reason' when a messi fails
+	// ErrResourceExists is used as part of the Event 'reason' when a arman fails
 	// to sync due to a Deployment of the same name already existing.
 	ErrResourceExists = "ErrResourceExists"
 
 	// MessageResourceExists is the message used for Events when a resource
 	// fails to sync due to a Deployment already existing
-	MessageResourceExists = "Resource %q already exists and is not managed by messi"
+	MessageResourceExists = "Resource %q already exists and is not managed by arman"
 	// MessageResourceSynced is the message used for an Event fired when a messi
 	// is synced successfully
-	MessageResourceSynced = "Messi synced successfully"
+	MessageResourceSynced = "Arman synced successfully"
 )
 
 type DeploymentListerAndSynced struct {
@@ -71,9 +72,9 @@ type ServiceListerAndSynced struct {
 	serviceLister corelisters.ServiceLister
 	serviceSynced cache.InformerSynced
 }
-type MessiListerAndSynced struct {
-	messiLister mylisters.MessiLister
-	messiSynced cache.InformerSynced
+type ArmanListerAndSynced struct {
+	armanLister mylisters.ArmanLister
+	armanSynced cache.InformerSynced
 }
 
 // Controller is the controller implementation for messi resources
@@ -85,7 +86,7 @@ type Controller struct {
 
 	DeploymentListerAndSynced
 	ServiceListerAndSynced
-	MessiListerAndSynced
+	ArmanListerAndSynced
 
 	// workqueue is a rate limited work queue. This is used to queue work to be
 	// processed instead of performing it as soon as a change happens. This
@@ -113,7 +114,7 @@ func NewCombo(
 	sampleclientset myclientset.Interface,
 	deploymentInformer appsinformers.DeploymentInformer,
 	serviceInformer coreinformers.ServiceInformer,
-	messiInformer myinformers.MessiInformer) *Controller {
+	armanInformer myinformers.ArmanInformer) *Controller {
 
 	// Create event broadcaster
 	// Add sample-controller types to the default Kubernetes Scheme so Events can be
@@ -131,23 +132,23 @@ func NewCombo(
 			serviceLister: serviceInformer.Lister(),
 			serviceSynced: serviceInformer.Informer().HasSynced,
 		},
-		MessiListerAndSynced: MessiListerAndSynced{
-			messiLister: messiInformer.Lister(),
-			messiSynced: messiInformer.Informer().HasSynced,
+		ArmanListerAndSynced: ArmanListerAndSynced{
+			armanLister: armanInformer.Lister(),
+			armanSynced: armanInformer.Informer().HasSynced,
 		},
 
-		workqueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "messis"),
+		workqueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "armans"),
 		recorder:  createRecorder(kubeclientset),
 	}
 
 	klog.Info("Setting up event handlers")
 	// Set up an event handler for when messi resources change
-	messiInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: controller.messiAdderFunction,
+	armanInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: controller.armanAdderFunction,
 		UpdateFunc: func(old, new interface{}) {
-			controller.messiAdderFunction(new)
+			controller.armanAdderFunction(new)
 		},
-		DeleteFunc: controller.messiDeleteFunction,
+		DeleteFunc: controller.armanDeleteFunction,
 	})
 	// Set up an event handler for when Deployment resources change. This
 	// handler will lookup the owner of the given Deployment, and if it is
@@ -196,11 +197,11 @@ func (c *Controller) Run(workers int, stopCh <-chan struct{}) error {
 	defer c.workqueue.ShutDown()
 
 	// Start the informer factories to begin populating the informer caches
-	klog.Info("Starting messi controller")
+	klog.Info("Starting arman controller")
 
 	// Wait for the caches to be synced before starting workers
 	klog.Info("Waiting for informer caches to sync")
-	if ok := cache.WaitForCacheSync(stopCh, c.deploymentsSynced, c.serviceSynced, c.messiSynced); !ok {
+	if ok := cache.WaitForCacheSync(stopCh, c.deploymentsSynced, c.serviceSynced, c.armanSynced); !ok {
 		return fmt.Errorf("failed to wait for caches to sync")
 	}
 
@@ -294,7 +295,7 @@ func (c *Controller) syncHandler(key string) error {
 	}
 
 	// Get the messi resource with this namespace/name
-	messi, err := c.messiLister.Messis(namespace).Get(name)
+	messi, err := c.armanLister.Armans(namespace).Get(name)
 	if err != nil {
 		// The messi resource may no longer exist, in which case we stop
 		// processing.
@@ -306,7 +307,7 @@ func (c *Controller) syncHandler(key string) error {
 		return err
 	}
 
-	deploymentName := messi.Spec.DeploymentName
+	deploymentName := arman.Spec.DeploymentName
 	if deploymentName == "" {
 		// We choose to absorb the error here as the worker would requeue the
 		// resource otherwise. Instead, the next time the resource is updated
@@ -315,7 +316,7 @@ func (c *Controller) syncHandler(key string) error {
 		return nil
 	}
 
-	servicename := messi.Spec.ServiceName
+	servicename := arman.Spec.ServiceName
 	if servicename == "" {
 		// We choose to absorb the error here as the worker would requeue the
 		// resource otherwise. Instead, the next time the resource is updated
@@ -362,7 +363,7 @@ func (c *Controller) syncHandler(key string) error {
 	// If this number of the replicas on the messi resource is specified, and the
 	// number does not equal the current desired replicas on the Deployment, we
 	// should update the Deployment resource.
-	if messi.Spec.Replicas != nil && *messi.Spec.Replicas != *deployment.Spec.Replicas {
+	if arman.Spec.Replicas != nil && *messi.Spec.Replicas != *deployment.Spec.Replicas {
 		klog.V(4).Infof("messi %s replicas: %d, deployment replicas: %d", name, *messi.Spec.Replicas, *deployment.Spec.Replicas)
 		deployment, err = c.kubeclientset.AppsV1().Deployments(messi.Namespace).Update(context.TODO(), newDeployment(messi), metav1.UpdateOptions{})
 	}
@@ -378,7 +379,7 @@ func (c *Controller) syncHandler(key string) error {
 
 	// Finally, we update the status block of the messi resource to reflect the
 	// current state of the world
-	err = c.updateMessiStatus(messi, deployment, svc)
+	err = c.updateArmanStatus(messi, deployment, svc)
 	if err != nil {
 		return err
 	}
@@ -387,7 +388,7 @@ func (c *Controller) syncHandler(key string) error {
 	return nil
 }
 
-func (c *Controller) updateMessiStatus(messi *myv1alpha1.Messi, deployment *appsv1.Deployment, svc *corev1.Service) error {
+func (c *Controller) updateArmanStatus(messi *myv1alpha1.Arman, deployment *appsv1.Deployment, svc *corev1.Service) error {
 	// NEVER modify objects from the store. It's a read-only, local cache.
 	// You can use DeepCopy() to make a deep copy of original object and modify this copy
 	// Or create a copy manually for better performance
@@ -398,6 +399,6 @@ func (c *Controller) updateMessiStatus(messi *myv1alpha1.Messi, deployment *apps
 	// we must use Update instead of UpdateStatus to update the Status block of the messi resource.
 	// UpdateStatus will not allow changes to the Spec of the resource,
 	// which is ideal for ensuring nothing other than resource status has been updated.
-	_, err := c.sampleclientset.ArnobV1alpha1().Messis(messi.Namespace).Update(context.TODO(), messiCopy, metav1.UpdateOptions{})
+	_, err := c.sampleclientset.ArmanV1alpha1().Armans(messi.Namespace).Update(context.TODO(), messiCopy, metav1.UpdateOptions{})
 	return err
 }
